@@ -1,1 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎤 Karaoke Player — May Tunog Na!</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+    body { background: #0f172a; color: #fff; padding: 20px; max-width: 800px; margin: 0 auto; }
+    h1 { text-align: center; color: #facc15; margin-bottom: 20px; }
+    
+    .lyrics-box {
+      background: #1e293b; border: 2px solid #3b82f6; border-radius: 12px;
+      padding: 30px 20px; min-height: 100px; margin-bottom: 20px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .lyrics-text { font-size: 22px; color: #fef3c8; text-align: center; }
+    .hint { color: #94a3b8; font-style: italic; }
+    
+    .box { background: #1e293b; border-radius: 10px; padding: 18px; margin-bottom: 15px; }
+    h2 { font-size: 15px; color: #93c5fd; margin-bottom: 10px; }
+    
+    input[type="file"] { width: 100%; padding: 8px; background: #334155; border: none; border-radius: 6px; color: #fff; }
+    .status { margin-top: 10px; padding: 8px; border-radius: 6px; font-size: 14px; }
+    .ok { background: #166534; color: #bbf7d0; }
+    .wait { background: #854d0e; color: #fef08a; }
+    .err { background: #991b1b; color: #fecaca; }
+    
+    .search-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    input[type="text"] { flex: 1; min-width: 150px; padding: 10px; border-radius: 6px; border: 2px solid #3b82f6; background: #1e293b; color: #fff; font-size: 14px; }
+    button { padding: 10px 14px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
+    .btn-blue { background: #3b82f6; color: white; }
+    .btn-blue:hover { background: #2563eb; }
+    .btn-gray { background: #475569; color: white; }
+    .btn-green { background: #22c55e; color: white; font-size: 18px; padding: 14px 40px; }
+    .btn-green:hover { background: #16a34a; }
+    .btn-red { background: #dc2626; color: white; font-size: 18px; padding: 14px 40px; }
+    .btn-red:hover { background: #b91c1c; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    button:active { transform: scale(0.98); }
+    
+    ul { list-style: none; max-height: 220px; overflow-y: auto; margin-top: 10px; }
+    li { padding: 10px 12px; border-bottom: 1px solid #334155; cursor: pointer; font-size: 14px; }
+    li:hover { background: #334155; }
+    li.selected { background: #1e3a5f; border-left: 3px solid #facc15; }
+    
+    .song-title { color: #fef08a; font-weight: bold; margin: 10px 0; font-size: 15px; word-break: break-all; }
+    .controls { display: flex; gap: 12px; margin-top: 15px; justify-content: center; flex-wrap: wrap; }
+    .count { font-size: 13px; color: #94a3b8; margin-top: 8px; }
+    .note { font-size: 12px; color: #64748b; margin-top: 10px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>🎤 Karaoke Player</h1>
 
+  <div class="lyrics-box">
+    <div class="lyrics-text" id="lyrics">
+      <span class="hint">🎤 Lalabas dito ang lyrics habang tumutugtog</span>
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>📦 1. Upload ZIP ng Kanta</h2>
+    <input type="file" id="zipFile" accept=".zip">
+    <div id="status" class="status wait">Pumili ng ZIP file...</div>
+  </div>
+
+  <div class="box">
+    <h2>🔍 2. Maghanap at Pumili</h2>
+    <div class="search-bar">
+      <input type="text" id="searchTxt" placeholder="I-type ang pangalan..." disabled>
+      <button class="btn-blue" id="searchBtn" disabled>Hanapin</button>
+      <button class="btn-gray" id="clearBtn" disabled>Burahin</button>
+    </div>
+    <div class="count" id="countInfo"></div>
+    <ul id="songList">
+      <li class="hint">I-upload muna ang ZIP file...</li>
+    </ul>
+  </div>
+
+  <div class="box">
+    <h2>🎵 3. Patugtog</h2>
+    <div class="song-title" id="songTitle">Wala pang napipiling kanta</div>
+    <div class="controls">
+      <button class="btn-green" id="playBtn" disabled>▶ PLAY</button>
+      <button class="btn-red" id="stopBtn" disabled>⏹ STOP</button>
+    </div>
+    <p class="note" id="loadNote">⏳ Naglo-load ng player... Sandali lang</p>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.2/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/midi-player-js@2.0.13/browser/midiplayer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
+
+<script>
+let player = null;
+let audioCtx = null;
+let instrument = null;
+let allSongs = [];
+let filtered = [];
+let selected = null;
+let selectedData = null;
+let isPlaying = false;
+
+const zipInput = document.getElementById('zipFile');
+const statusDiv = document.getElementById('status');
+const searchTxt = document.getElementById('searchTxt');
+const searchBtn = document.getElementById('searchBtn');
+const clearBtn = document.getElementById('clearBtn');
+const songList = document.getElementById('songList');
+const countInfo = document.getElementById('countInfo');
+const lyricsDiv = document.getElementById('lyrics');
+const songTitle = document.getElementById('songTitle');
+const playBtn = document.getElementById('playBtn');
+const stopBtn = document.getElementById('stopBtn');
+const loadNote = document.getElementById('loadNote');
+
+// ========== INITIALIZE AUDIO ==========
+async function initAudio() {
+  if (audioCtx) return true;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    instrument = await Soundfont.instrument(audioCtx, 'acoustic_grand_piano');
+    loadNote.textContent = '✅ Player handa na — Pumili ng kanta!';
+    loadNote.style.color = '#22c55e';
+    return true;
+  } catch (e) {
+    loadNote.textContent = '⚠️ I-click kahit saan sa page muna, tapos PLAY ulit';
+    return false;
+  }
+}
+
+// ========== PLAY A NOTE ==========
+function playNote(note, velocity, time) {
+  if (!instrument || !audioCtx) return;
+  const gain = Math.max(0.05, (velocity || 80) / 127 * 0.4);
+  instrument.start({
+    note: note,
+    time: audioCtx.currentTime + Math.max(0, time),
+    gain: gain,
+    duration: 2
+  });
+}
+
+// ========== RENDER SONG LIST ==========
+function renderList(list) {
+  songList.innerHTML = '';
+  if (!list.length) {
+    songList.innerHTML = '<li class="hint">Walang nakitang kanta</li>';
+    return;
+  }
+  list.forEach(s => {
+    const li = document.createElement('li');
+    li.textContent = '🎵 ' + s.name;
+    if (selected && selected.id === s.id) li.className = 'selected';
+    li.onclick = async () => pickSong(s);
+    songList.appendChild(li);
+  });
+}
+
+// ========== PICK A SONG ==========
+async function pickSong(song) {
+  selected = song;
+  renderList(filtered);
+  songTitle.textContent = '🎵 Napili: ' + song.name;
+  lyricsDiv.innerHTML = '<span class="hint">⏳ Binabasa ang kanta...</span>';
+  try {
+    // Kailangan ng JSZip para mabasa ang file mula sa ZIP
+    if (!window.JSZip) throw new Error('Hindi pa handa ang file reader');
+    selectedData = await song.entry.async('arraybuffer');
+    lyricsDiv.innerHTML = '<span class="hint">✅ Handa na — I-click ang PLAY!</span>';
+    playBtn.disabled = false;
+    stopBtn.disabled = true;
+    initAudio(); // Simulan ang pag-load ng player
+  } catch (e) {
+    lyricsDiv.innerHTML = '<span class="hint">❌ Hindi mabasa ang file: ' + e.message + '</span>';
+  }
+}
+
+// ========== SEARCH ==========
+function doSearch() {
+  const word = searchTxt.value.trim().toLowerCase();
+  if (!word) {
+    filtered = [...allSongs];
+    countInfo.textContent = `✅ Kabuuan: ${allSongs.length} na kanta`;
+  } else {
+    filtered = allSongs.filter(s => s.name.toLowerCase().includes(word));
+    countInfo.textContent = `✅ Nakita: ${filtered.length}`;
+  }
+  renderList(filtered);
+}
+
+// ========== READ ZIP ==========
+zipInput.onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  allSongs = [];
+  filtered = [];
+  selected = null;
+  selectedData = null;
+  isPlaying = false;
+  statusDiv.textContent = '⏳ Binabasa ang ZIP file... Sandali lang';
+  statusDiv.className = 'status wait';
+  songList.innerHTML = '<li class="hint">Sandali lang...</li>';
+  searchTxt.disabled = true;
+  searchBtn.disabled = true;
+  clearBtn.disabled = true;
+  playBtn.disabled = true;
+  stopBtn.disabled = true;
+  
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const files = [];
+    
+    zip.forEach((path, entry) => {
+      if (!entry.dir) {
+        const ext = path.slice(-4).toLowerCase();
+        if (ext === '.mid' || ext === '.kar' || ext === '.midi') {
+          const name = path.split('/').pop().replace(/\.(mid|midi|kar)$/i, '');
+          files.push({ id: path, name: name, entry: entry });
+        }
+      }
+    });
+    
+    if (!files.length) throw new Error('Walang .mid/.kar files sa ZIP');
+    
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    allSongs = files;
+    filtered = [...allSongs];
+    
+    countInfo.textContent = `✅ Kabuuan: ${allSongs.length} na kanta`;
+    renderList(filtered);
+    
+    searchTxt.disabled = false;
+    searchBtn.disabled = false;
+    clearBtn.disabled = false;
+    
+    statusDiv.textContent = '✅ Tapos na — Maghanap at pumili!';
+    statusDiv.className = 'status ok';
+    
+  } catch (err) {
+    statusDiv.textContent = '❌ ' + err.message;
+    statusDiv.className = 'status err';
+    songList.innerHTML = '<li class="hint">Subukan ulit</li>';
+  }
+};
+
+// ========== PLAY ==========
+playBtn.onclick = async () => {
+  if (!selectedData) { alert('Pumili muna ng kanta!'); return; }
+  
+  const ready = await initAudio();
+  if (!ready) {
+    alert('⚠️ I-click muna kahit saan sa page, tapos PLAY ulit');
+    return;
+  }
+  
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  
+  try {
+    // Kung may tumutugtog na, itigil muna
+    if (player) {
+      player.stop();
+    }
+    
+    player = new MidiPlayer.Player(function(event) {
+      if (event.type === 'channel') {
+        if (event.noteOn && event.velocity > 0) {
+          playNote(event.noteNumber, event.velocity, 0);
+        }
+      }
+      if (event.type === 'meta' && event.text && event.text.trim()) {
+        lyricsDiv.textContent = event.text.trim();
+      }
+    });
+    
+    player.on('endOfFile', function() {
+      isPlaying = false;
+      lyricsDiv.innerHTML = '<span class="hint">✅ Tapos na — Pumili ng susunod</span>';
+      playBtn.disabled = false;
+      stopBtn.disabled = true;
+    });
+    
+    player.loadArrayBuffer(selectedData);
+    player.play();
+    isPlaying = true;
+    
+    lyricsDiv.innerHTML = '<span class="hint">🎵 Tumutugtog na...</span>';
+    playBtn.disabled = true;
+    stopBtn.disabled = false;
+    
+  } catch (e) {
+    lyricsDiv.innerHTML = '<span class="hint">❌ Error: ' + e.message + '</span>';
+    playBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+};
+
+// ========== STOP ==========
+stopBtn.onclick = function() {
+  if (player) player.stop();
+  isPlaying = false;
+  lyricsDiv.innerHTML = '<span class="hint">⏹️ Tumigil — Pumili ng kanta para magsimula</span>';
+  playBtn.disabled = false;
+  stopBtn.disabled = true;
+};
+
+searchBtn.onclick = doSearch;
+searchTxt.onkeypress = e => e.key === 'Enter' && doSearch();
+clearBtn.onclick = () => { searchTxt.value = ''; doSearch(); };
+
+// Subukang i-init kapag kinlick ang page kahit saan
+document.body.addEventListener('click', function firstClick() {
+  initAudio();
+  document.body.removeEventListener('click', firstClick);
+}, { once: true });
+</script>
+</body>
+</html>
